@@ -9,8 +9,8 @@ app = FastAPI()
 @app.get("/data")
 async def get_data_from_services():
     async with httpx.AsyncClient() as client:
-        response_b = await client.get("http://service-b:8001/data", timeout=10.0)
-        response_c = await client.get("http://service-c:8002/data", timeout=10.0)
+        response_b = await client.get("http://nginx/service-b/data", timeout=10.0)
+        response_c = await client.get("http://nginx/service-c/data", timeout=10.0)
 
         # error handling
         if response_b.status_code != 200:
