@@ -1,0 +1,24 @@
+services:
+  service-a:
+    build:
+      context: ./service-a
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    depends_on:
+      - service-b
+      - service-c
+  
+  service-b:
+    build:
+      context: ./service-b
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8001"
+  
+  service-c:
+    build:
+      context: ./service-c
+      dockerfile: Dockerfile
+    ports:
+      - "8002:8002"
