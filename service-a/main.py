@@ -48,6 +48,8 @@ async def retry_request(url, client, retries=3, delay=1, breaker=None):
             status_code = e.response.status_code
             logger.error("Attempt %d: HTTP error from %s: %s", attempt + 1, url, str(e))
             if status_code < 500:
+                if breaker:
+                    breaker.record_failure()
                 return None  # Don't retry for client errors
         if attempt < retries - 1:
             await asyncio.sleep(delay * (2 ** attempt))  # Wait before retrying
