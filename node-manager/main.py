@@ -10,10 +10,30 @@ app = FastAPI()
 async def get_data():
     logger.info("Received request for /data at %s", datetime.now())
     return {
-        "service": "B",
-        "message": "Hello from Service B!",
+        "service": "Node Manager",
+        "message": "Hello from Node Manager!",
     }
+'''
+Node Manager
+
+Owns:
+
+GET /nodes
+POST /nodes/:id/down
+POST /nodes/:id/up
+
+Stores node state.
+
+Example:
+
+{
+  "id": "node-1",
+  "capacity": 10,
+  "used": 3,
+  "healthy": true
+}
+'''
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+    uvicorn.run(app, host="0.0.0.0", port=8002)

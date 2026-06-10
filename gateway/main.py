@@ -8,27 +8,27 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 app = FastAPI()
 
-breaker_b = circuit_breaker.CircuitBreaker(threshold=4, timeout=30)
-breaker_c = circuit_breaker.CircuitBreaker(threshold=4, timeout=30)
+breaker_scheduler = circuit_breaker.CircuitBreaker(threshold=4, timeout=30)
+breaker_node_manager = circuit_breaker.CircuitBreaker(threshold=4, timeout=30)
 
 @app.get("/data")
 async def get_data_from_services():
     async with httpx.AsyncClient() as client:
-        response_b = await retry_request("http://nginx/service-b/data", client, breaker=breaker_b)
-        if response_b is None:
-            return {"error": "Failed to connect to Service B"}
-        response_c = await retry_request("http://nginx/service-c/data", client, breaker=breaker_c)
-        if response_c is None:
-            return {"error": "Failed to connect to Service C"}
+        response_scheduler = await retry_request("http://nginx/scheduler/data", client, breaker=breaker_scheduler)
+        if response_scheduler is None:
+            return {"error": "Failed to connect to Scheduler"}
+        response_node_manager = await retry_request("http://nginx/node-manager/data", client, breaker=breaker_node_manager)
+        if response_node_manager is None:
+            return {"error": "Failed to connect to Node Manager"}
 
-        logger.info("Received data from Service B: %s", response_b.json())
-        logger.info("Received data from Service C: %s", response_c.json())
+        logger.info("Received data from Scheduler: %s", response_scheduler.json())
+        logger.info("Received data from Node Manager: %s", response_node_manager.json())
 
         return {
-            "service": "A",
-            "message": "Hello from Service A!",
-            "data_from_b": response_b.json(),
-            "data_from_c": response_c.json(),
+            "service": "Gateway",
+            "message": "Hello from Gateway!",
+            "data_from_scheduler": response_scheduler.json(),
+            "data_from_node_manager": response_node_manager.json(),
         }
 
 async def retry_request(url, client, retries=3, delay=1, breaker=None):
@@ -58,6 +58,14 @@ async def retry_request(url, client, retries=3, delay=1, breaker=None):
     if breaker:
         breaker.record_failure()
     return None
+
+'''
+Write new APIs
+POST /sessions
+DELETE /sessions/:id
+GET /sessions
+
+'''
 
 if __name__ == "__main__":
     import uvicorn

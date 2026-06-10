@@ -12,9 +12,9 @@ A small microservices demo showing retries, load balancing, and reverse proxy ro
 
 ## Services
 
-- Service A (`8000`): Aggregates data from Service B and Service C.
-- Service B (`8001`, replica on `8003`): Responds to `/data` and is load-balanced by NGINX.
-- Service C (`8002`): Responds to `/data`.
+- Gateway (`8000`): Aggregates data from Scheduler and Node Manager.
+- Scheduler (`8001`, replica on `8003`): Responds to `/data` and is load-balanced by NGINX.
+- Node Manager (`8002`): Responds to `/data`.
 - NGINX (`80`): Reverse proxy for internal service-to-service calls.
 
 ## Run
@@ -34,15 +34,15 @@ curl http://localhost:8000/data
 - Through NGINX routes:
 
 ```bash
-curl http://localhost/service-b/data
-curl http://localhost/service-c/data
+curl http://localhost/scheduler/data
+curl http://localhost/node-manager/data
 ```
 
 ## Fault-Tolerance Features
 
-- Retry with exponential backoff in Service A for upstream calls.
+- Retry with exponential backoff in Gateway for upstream calls.
 - Retryable handling for transient failures.
-- NGINX upstream pool for Service B replicas.
+- NGINX upstream pool for Scheduler replicas.
 
 ## Stop
 
