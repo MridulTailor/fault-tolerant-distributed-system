@@ -1,71 +1,42 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request, Response
 import httpx
 import logging
-import asyncio
-import circuit_breaker
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 app = FastAPI()
 
-breaker_scheduler = circuit_breaker.CircuitBreaker(threshold=4, timeout=30)
-breaker_node_manager = circuit_breaker.CircuitBreaker(threshold=4, timeout=30)
+SCHEDULER_URL = "http://nginx/scheduler"
 
-@app.get("/data")
-async def get_data_from_services():
+@app.post("/sessions")
+async def create_session(request: Request):
     async with httpx.AsyncClient() as client:
-        response_scheduler = await retry_request("http://nginx/scheduler/data", client, breaker=breaker_scheduler)
-        if response_scheduler is None:
-            return {"error": "Failed to connect to Scheduler"}
-        response_node_manager = await retry_request("http://nginx/node-manager/data", client, breaker=breaker_node_manager)
-        if response_node_manager is None:
-            return {"error": "Failed to connect to Node Manager"}
-
-        logger.info("Received data from Scheduler: %s", response_scheduler.json())
-        logger.info("Received data from Node Manager: %s", response_node_manager.json())
-
-        return {
-            "service": "Gateway",
-            "message": "Hello from Gateway!",
-            "data_from_scheduler": response_scheduler.json(),
-            "data_from_node_manager": response_node_manager.json(),
-        }
-
-async def retry_request(url, client, retries=3, delay=1, breaker=None):
-    for attempt in range(retries):
-        if breaker and not breaker.allow_request():
-            logger.warning("Circuit breaker is OPEN for %s. Skipping request.", url)
-            return None
         try:
-            response = await client.get(url, timeout=2.0)
-            response.raise_for_status()  # Raise an exception for HTTP errors
-            if breaker:
-                breaker.record_success()
-            return response
-        except httpx.RequestError as e:
-            logger.warning("Attempt %d: Failed to connect to %s: %s", attempt + 1, url, str(e))
-        except httpx.HTTPStatusError as e:
-            status_code = e.response.status_code
-            logger.error("Attempt %d: HTTP error from %s: %s", attempt + 1, url, str(e))
-            if status_code < 500:
-                if breaker:
-                    breaker.record_failure()
-                return None  # Don't retry for client errors
-        if attempt < retries - 1:
-            await asyncio.sleep(delay * (2 ** attempt))  # Wait before retrying
-           
-    logger.error("Failed to connect to %s after %d attempts", url, retries)
-    if breaker:
-        breaker.record_failure()
-    return None
+            resp = await client.post(f"{SCHEDULER_URL}/sessions", timeout=5.0)
+            return Response(content=resp.content, status_code=resp.status_code, media_type=resp.headers.get("content-type"))
+        except Exception as e:
+            logger.error("Error communicating with scheduler: %s", e)
+            raise HTTPException(status_code=500, detail="Internal Server Error")
 
-'''
-Write new APIs
-POST /sessions
-DELETE /sessions/:id
-GET /sessions
+@app.delete("/sessions/{session_id}")
+async def delete_session(session_id: str):
+    async with httpx.AsyncClient() as client:
+        try:
+            resp = await client.delete(f"{SCHEDULER_URL}/sessions/{session_id}", timeout=5.0)
+            return Response(content=resp.content, status_code=resp.status_code, media_type=resp.headers.get("content-type"))
+        except Exception as e:
+            logger.error("Error communicating with scheduler: %s", e)
+            raise HTTPException(status_code=500, detail="Internal Server Error")
 
-'''
+@app.get("/sessions")
+async def get_sessions():
+    async with httpx.AsyncClient() as client:
+        try:
+            resp = await client.get(f"{SCHEDULER_URL}/sessions", timeout=5.0)
+            return Response(content=resp.content, status_code=resp.status_code, media_type=resp.headers.get("content-type"))
+        except Exception as e:
+            logger.error("Error communicating with scheduler: %s", e)
+            raise HTTPException(status_code=500, detail="Internal Server Error")
 
 if __name__ == "__main__":
     import uvicorn
