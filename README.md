@@ -1,21 +1,14 @@
-# Fault-Tolerant Distributed System
+# Distributed Scheduler
 
-A small microservices demo showing retries, load balancing, and reverse proxy routing with FastAPI, Docker Compose, and NGINX.
+A fault-tolerant workload scheduler that allocates sessions across a cluster of nodes. It demonstrates strict service boundaries, atomic capacity enforcement, and load-balanced routing with FastAPI, Docker Compose, and NGINX.
 
 ## Architecture
 
-![System Architecture](docs/architecture.png)
+The system is composed of three microservices:
 
-## Circuit Breaker / Resilience Flow
-
-![Circuit Breaker Flow](docs/circuit-breaker.png)
-
-## Services
-
-- Gateway (`8000`): Aggregates data from Scheduler and Node Manager.
-- Scheduler (`8001`, replica on `8003`): Responds to `/data` and is load-balanced by NGINX.
-- Node Manager (`8002`): Responds to `/data`.
-- NGINX (`80`): Reverse proxy for internal service-to-service calls.
+- **Node Manager (`8002`)**: Owns the definitive state of the nodes (health and capacity). It exposes internal endpoints to allocate and release node capacity atomically.
+- **Scheduler (`8001`, replica on `8003`)**: Handles placement logic and session state. It queries the Node Manager to find healthy nodes with available capacity, secures the reservation, and tracks the session in memory. It is load-balanced by NGINX.
+- **Gateway (`8000`)**: A stateless public API proxy that forwards session requests (`POST`, `DELETE`, `GET`) to the internal Schedulers.
 
 ## Run
 
@@ -25,24 +18,39 @@ docker compose up --build
 
 ## Try It
 
-- Main API (aggregated response):
-
+- **Create a Session (Allocate a Node)**:
 ```bash
-curl http://localhost:8000/data
+curl -X POST http://localhost:8000/sessions
+```
+*(Returns the generated `session_id` and the assigned `node_id`)*
+
+- **List Active Sessions**:
+```bash
+curl http://localhost:8000/sessions
 ```
 
-- Through NGINX routes:
-
+- **View Node State**:
 ```bash
-curl http://localhost/scheduler/data
-curl http://localhost/node-manager/data
+curl http://localhost:8002/nodes
 ```
 
-## Fault-Tolerance Features
+- **Simulate Node Failure**:
+```bash
+curl -X POST http://localhost:8002/nodes/node-1/down
+```
+*(New sessions will automatically route to other healthy nodes)*
 
-- Retry with exponential backoff in Gateway for upstream calls.
-- Retryable handling for transient failures.
-- NGINX upstream pool for Scheduler replicas.
+- **Delete a Session (Release Capacity)**:
+```bash
+curl -X DELETE http://localhost:8000/sessions/<session_id>
+```
+
+## Fault-Tolerance & Distributed System Features
+
+- **Strict Ownership**: Node Manager is the sole atomic source of truth for capacity, preventing race conditions.
+- **Resilient Retry Logic**: If multiple Schedulers try to allocate the same node concurrently and one fails due to capacity constraints, the Scheduler gracefully catches the rejection and retries placement on the next available node.
+- **Health-Aware Routing**: Schedulers actively filter out nodes that have been marked as unhealthy.
+- **NGINX Load Balancing**: API traffic to the Scheduler is round-robin distributed across multiple replicas.
 
 ## Stop
 
