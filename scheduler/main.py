@@ -53,17 +53,22 @@ async def create_session():
             
         # 4. Generate session and store
         session_id = str(uuid.uuid4())
-        sessions[session_id] = chosen_node_id
+        sessions[session_id] = {
+            "id": session_id,
+            "nodeId": chosen_node_id,
+            "status": "RUNNING",
+            "createdAt": datetime.utcnow().isoformat() + "Z"
+        }
         logger.info("Session %s allocated to %s", session_id, chosen_node_id)
         
-        return {"session_id": session_id, "node_id": chosen_node_id}
+        return sessions[session_id]
 
 @app.delete("/sessions/{session_id}")
 async def delete_session(session_id: str):
     if session_id not in sessions:
         raise HTTPException(status_code=404, detail="Session not found")
         
-    node_id = sessions[session_id]
+    node_id = sessions[session_id]["nodeId"]
     
     async with httpx.AsyncClient() as client:
         try:
@@ -79,7 +84,7 @@ async def delete_session(session_id: str):
 
 @app.get("/sessions")
 async def get_sessions():
-    return {"sessions": [{"session_id": k, "node_id": v} for k, v in sessions.items()]}
+    return {"sessions": list(sessions.values())}
 
 if __name__ == "__main__":
     import uvicorn
