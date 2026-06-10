@@ -4,10 +4,11 @@ A fault-tolerant workload scheduler that allocates sessions across a cluster of 
 
 ## Architecture
 
-The system is composed of three microservices:
+The system is composed of four core components:
 
-- **Node Manager (`8002`)**: Owns the definitive state of the nodes (health and capacity). It exposes internal endpoints to allocate and release node capacity atomically.
-- **Scheduler (`8001`, replica on `8003`)**: Handles placement logic and session state. It queries the Node Manager to find healthy nodes with available capacity, secures the reservation, and tracks the session in memory. It is load-balanced by NGINX.
+- **Redis (`6379`)**: The centralized, distributed state store that persists session data and tracks real-time node capacity and health.
+- **Node Manager (`8002`)**: Owns the logic for the nodes. It exposes internal endpoints to allocate and release node capacity atomically via Redis Lua scripts, completely preventing split-brain scheduling.
+- **Scheduler (`8001`, replica on `8003`)**: Handles placement logic and session routing. It queries the Node Manager to find healthy nodes, secures the reservation, and stores the session state globally in Redis. It is load-balanced by NGINX.
 - **Gateway (`8000`)**: A stateless public API proxy that forwards session requests (`POST`, `DELETE`, `GET`) to the internal Schedulers.
 
 ## Run
@@ -47,8 +48,9 @@ curl -X DELETE http://localhost:8000/sessions/<session_id>
 
 ## Fault-Tolerance & Distributed System Features
 
-- **Strict Ownership**: Node Manager is the sole atomic source of truth for capacity, preventing race conditions.
-- **Resilient Retry Logic**: If multiple Schedulers try to allocate the same node concurrently and one fails due to capacity constraints, the Scheduler gracefully catches the rejection and retries placement on the next available node.
+- **Centralized Distributed State**: Schedulers are completely stateless; all active sessions are globally tracked in a shared Redis cluster, allowing seamless horizontal scaling.
+- **Atomic Lua Script Allocations**: Node Manager uses an atomic Redis Lua script to read capacity and increment usage in a single, un-interruptible operation. This prevents "split-brain" over-allocation race conditions even under heavy concurrent load.
+- **Resilient Retry Logic**: If multiple Schedulers try to allocate the same node concurrently and one fails due to capacity constraints (caught by the Lua script), the Scheduler gracefully catches the rejection and retries placement on the next available node.
 - **Health-Aware Routing**: Schedulers actively filter out nodes that have been marked as unhealthy.
 - **NGINX Load Balancing**: API traffic to the Scheduler is round-robin distributed across multiple replicas.
 

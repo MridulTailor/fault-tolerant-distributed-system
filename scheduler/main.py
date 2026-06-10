@@ -8,9 +8,10 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 app = FastAPI()
 
-# In-memory session store (MVP)
-sessions = {}
+import redis.asyncio as redis
+import json
 
+redis_client = redis.from_url("redis://redis:6379", decode_responses=True)
 @app.post("/sessions")
 async def create_session():
     async with httpx.AsyncClient() as client:
@@ -53,22 +54,24 @@ async def create_session():
             
         # 4. Generate session and store
         session_id = str(uuid.uuid4())
-        sessions[session_id] = {
+        session_data = {
             "id": session_id,
             "nodeId": chosen_node_id,
             "status": "RUNNING",
             "createdAt": datetime.utcnow().isoformat() + "Z"
         }
+        await redis_client.hset(f"session:{session_id}", mapping=session_data)
         logger.info("Session %s allocated to %s", session_id, chosen_node_id)
         
-        return sessions[session_id]
+        return session_data
 
 @app.delete("/sessions/{session_id}")
 async def delete_session(session_id: str):
-    if session_id not in sessions:
+    session_data = await redis_client.hgetall(f"session:{session_id}")
+    if not session_data:
         raise HTTPException(status_code=404, detail="Session not found")
         
-    node_id = sessions[session_id]["nodeId"]
+    node_id = session_data["nodeId"]
     
     async with httpx.AsyncClient() as client:
         try:
@@ -78,13 +81,18 @@ async def delete_session(session_id: str):
             logger.error("Failed to release capacity on %s for session %s: %s", node_id, session_id, e)
             # Proceed to delete session anyway for MVP
             
-    del sessions[session_id]
+    await redis_client.delete(f"session:{session_id}")
     logger.info("Session %s deallocated from %s", session_id, node_id)
     return {"message": "Session deleted", "session_id": session_id}
 
 @app.get("/sessions")
 async def get_sessions():
-    return {"sessions": list(sessions.values())}
+    keys = await redis_client.keys("session:*")
+    sessions = []
+    for key in keys:
+        session_data = await redis_client.hgetall(key)
+        sessions.append(session_data)
+    return {"sessions": sessions}
 
 if __name__ == "__main__":
     import uvicorn

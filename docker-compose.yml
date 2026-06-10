@@ -1,4 +1,9 @@
 services:
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+
   gateway:
     build:
       context: ./gateway
@@ -12,6 +17,8 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8001:8001"
+    depends_on:
+      - redis
   
   scheduler-2:
     build:
@@ -19,6 +26,8 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8003:8001"
+    depends_on:
+      - redis
       
   node-manager:
     build:
@@ -26,6 +35,8 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8002:8002"
+    depends_on:
+      - redis
   
   nginx:
     image: nginx:latest
