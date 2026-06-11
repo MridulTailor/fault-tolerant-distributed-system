@@ -22,16 +22,23 @@ While modeled after cloud gaming architectures, this pattern applies to any high
 
 ![Architecture Diagram](docs/architecture.png)
 
-The system is composed of four core components:
-- **Redis (`6379`)**: The centralized, distributed state store that persists session data and tracks real-time node capacity and health.
+The system is composed of five core components:
+- **Redis (`6379`)**: The centralized, fast operational state store that tracks real-time node capacity and active sessions.
+- **PostgreSQL (`5433`)**: The historical archive database that explicitly tracks the lifecycle of all sessions (creation and completion) without cluttering the operational state.
 - **Node Manager (`8002`)**: Owns the logic for the nodes. It exposes internal endpoints to allocate and release node capacity atomically via Redis Lua scripts, completely preventing split-brain scheduling.
-- **Scheduler (`8001`, replica on `8003`)**: Handles placement logic and session routing. It queries the Node Manager to find healthy nodes, secures the reservation, and stores the session state globally in Redis. It is load-balanced by NGINX.
+- **Scheduler (`8001`, replica on `8003`)**: Handles placement logic and session routing. It queries the Node Manager to find healthy nodes, secures the reservation, stores the active session in Redis, and asynchronously logs the lifecycle event to PostgreSQL. It is load-balanced by NGINX.
 - **Gateway (`8000`)**: A stateless public API proxy that forwards session requests (`POST`, `DELETE`, `GET`) to the internal Schedulers.
 
 ## Run
 
+First, set up your environment variables:
 ```bash
-docker compose up --build
+cp .env.example .env
+```
+
+Then, start the cluster:
+```bash
+docker compose up --build -d
 ```
 
 ## Try It
@@ -64,6 +71,7 @@ curl -X DELETE http://localhost:8000/sessions/<session_id>
 ```
 
 ## Fault-Tolerance & Distributed System Features
+- **Strict Separation of Concerns**: Fast operational state (active sessions, node capacity) is kept strictly isolated in Redis, while historical session lifecycle data is safely archived in PostgreSQL.
 - **Centralized Distributed State**: Schedulers are completely stateless; all active sessions are globally tracked in a shared Redis cluster, allowing seamless horizontal scaling.
 - **Atomic Lua Script Allocations**: Node Manager uses an atomic Redis Lua script to read capacity and increment usage in a single, un-interruptible operation. This prevents "split-brain" over-allocation race conditions even under heavy concurrent load.
 - **Resilient Retry Logic**: If multiple Schedulers try to allocate the same node concurrently and one fails due to capacity constraints (caught by the Lua script), the Scheduler gracefully catches the rejection and retries placement on the next available node.

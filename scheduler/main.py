@@ -3,15 +3,24 @@ import httpx
 import logging
 import uuid
 from datetime import datetime
+from contextlib import asynccontextmanager
+import asyncpg
+
+from config import REDIS_URL, NODE_MANAGER_URL, POSTGRES_URL
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    app.state.pg_pool = await asyncpg.create_pool(POSTGRES_URL)
+    yield
+    await app.state.pg_pool.close()
+
+app = FastAPI(lifespan=lifespan)
 
 import redis.asyncio as redis
 import json
-
-from config import REDIS_URL, NODE_MANAGER_URL
 
 redis_client = redis.from_url(REDIS_URL, decode_responses=True)
 @app.post("/sessions")
@@ -56,13 +65,23 @@ async def create_session():
             
         # 4. Generate session and store
         session_id = str(uuid.uuid4())
+        created_at = datetime.utcnow()
         session_data = {
             "id": session_id,
             "nodeId": chosen_node_id,
             "status": "RUNNING",
-            "createdAt": datetime.utcnow().isoformat() + "Z"
+            "createdAt": created_at.isoformat() + "Z"
         }
         await redis_client.hset(f"session:{session_id}", mapping=session_data)
+        
+        try:
+            await app.state.pg_pool.execute(
+                "INSERT INTO sessions_history (id, node_id, status, created_at) VALUES ($1, $2, $3, $4)",
+                session_id, chosen_node_id, "RUNNING", created_at
+            )
+        except Exception as e:
+            logger.error("Failed to log session to history: %s", e)
+            
         logger.info("Session %s allocated to %s", session_id, chosen_node_id)
         
         return session_data
@@ -84,6 +103,15 @@ async def delete_session(session_id: str):
             # Proceed to delete session anyway for MVP
             
     await redis_client.delete(f"session:{session_id}")
+    
+    try:
+        await app.state.pg_pool.execute(
+            "UPDATE sessions_history SET status = $1, completed_at = $2 WHERE id = $3",
+            "COMPLETED", datetime.utcnow(), session_id
+        )
+    except Exception as e:
+        logger.error("Failed to update session history: %s", e)
+        
     logger.info("Session %s deallocated from %s", session_id, node_id)
     return {"message": "Session deleted", "session_id": session_id}
 
