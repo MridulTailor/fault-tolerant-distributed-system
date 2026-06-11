@@ -22,6 +22,9 @@ app = FastAPI(lifespan=lifespan)
 import redis.asyncio as redis
 import json
 
+from strategies import LeastLoadedStrategy
+strategy = LeastLoadedStrategy()
+
 redis_client = redis.from_url(REDIS_URL, decode_responses=True)
 @app.post("/sessions")
 async def create_session():
@@ -39,11 +42,13 @@ async def create_session():
         
         # 2. Choose node and attempt allocation
         chosen_node_id = None
-        for node in nodes:
-            if not node["healthy"] or node["used"] >= node["capacity"]:
-                continue
+        
+        while True:
+            best_node = strategy.select_node(nodes)
+            if not best_node:
+                break
                 
-            node_id = node["id"]
+            node_id = best_node["id"]
             
             try:
                 reserve_resp = await client.post(f"{NODE_MANAGER_URL}/nodes/{node_id}/allocate", timeout=2.0)
@@ -55,10 +60,12 @@ async def create_session():
                     break
                 else:
                     logger.warning("Failed to allocate on %s: %s", node_id, resp_data.get("reason"))
-                    continue # Try the next node
+                    nodes.remove(best_node)
+                    continue
             except Exception as e:
                 logger.error("Error calling allocate on %s: %s", node_id, e)
-                continue # Try the next node
+                nodes.remove(best_node)
+                continue
                 
         if not chosen_node_id:
             raise HTTPException(status_code=503, detail="No available capacity in the cluster")

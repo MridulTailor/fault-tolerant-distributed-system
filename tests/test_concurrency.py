@@ -20,7 +20,7 @@ def test_split_brain():
     print("--- Testing Split-Brain Concurrency ---")
     print("Sending 40 concurrent requests simultaneously to both schedulers.")
     
-    # We send 20 to scheduler-1 and 20 to scheduler-2 at the same time
+    # I send 20 to scheduler-1 and 20 to scheduler-2 at the same time
     urls = [SCHEDULER_1_URL] * 20 + [SCHEDULER_2_URL] * 20
     
     success_count = 0
